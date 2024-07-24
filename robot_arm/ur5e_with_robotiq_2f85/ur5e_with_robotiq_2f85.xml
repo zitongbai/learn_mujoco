@@ -251,7 +251,7 @@
         </body>
       </body>
     </body>
-    <body name="box_129838031310990412">
+    <body name="box_2152095551244513547">
       <freejoint name="//unnamed_joint_0"/>
       <geom name="mybox" class="/" type="box" size="0.02 0.02 0.02" rgba="0.80000000000000004 0.10000000000000001 0.10000000000000001 1"/>
       <inertial pos="0 0 0" mass="0.01" diaginertia="0.0001 0.0001 0.0001"/>
