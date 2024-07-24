@@ -15,12 +15,9 @@ class RobotCtrl:
     def __init__(self, interface:RobotMjInterface) -> None:
         self.interface = interface
         
-        # we only use model and data for calculation
-        # we get current states from outside
-        # so here is deepcopy
-        with interface.data_lock:
-            self.model = interface.model
-            self.data = deepcopy(interface.data)
+        self.model = interface.model
+        self.data_inv_dyn = mujoco.MjData(self.model)   # for inverse dynamics
+        self.data_inv_kin = mujoco.MjData(self.model)   # for inverse kinematics
         
         self.joint_num = interface.joint_num
         self.ee_site_name = interface.ee_site_name
@@ -62,16 +59,16 @@ class RobotCtrl:
             assert len(desired_joint_vel) == self.joint_num
         
 
-        self.data.qpos[:self.joint_num] = self.interface.get_joint_pos()
-        self.data.qvel[:self.joint_num] = self.interface.get_joint_vel()
+        self.data_inv_dyn.qpos[:self.joint_num] = self.interface.get_joint_pos()
+        self.data_inv_dyn.qvel[:self.joint_num] = self.interface.get_joint_vel()
         
-        mujoco.mj_forward(self.model, self.data)
+        mujoco.mj_forward(self.model, self.data_inv_dyn)
         
         # inertia matrix
         M = np.zeros([self.model.nv, self.model.nv])
-        mujoco.mj_fullM(self.model, M, self.data.qM)
+        mujoco.mj_fullM(self.model, M, self.data_inv_dyn.qM)
         # coriolis and gravity
-        C = self.data.qfrc_bias[:self.joint_num]
+        C = self.data_inv_dyn.qfrc_bias[:self.joint_num]
         
         pd_ctrl = self.kp * (desired_joint_pos - self.interface.get_joint_pos()) + self.kd * (desired_joint_vel - self.interface.get_joint_vel())
         desired_joint_torque = M[:self.joint_num, :self.joint_num] @ pd_ctrl + C
@@ -79,8 +76,11 @@ class RobotCtrl:
         return desired_joint_torque
     
     def set_joint_pos_vel(self, desired_joint_pos:np.ndarray, desired_joint_vel:np.ndarray=None) -> None:
-        self.desired_joint_pos = desired_joint_pos
-        self.desired_joint_vel = desired_joint_vel
+        try:
+            self.desired_joint_pos = desired_joint_pos
+            self.desired_joint_vel = desired_joint_vel
+        except Exception as e:
+            print(f"Error in setting joint pos vel: {e}")
     
     def low_level_ctrl_loop(self):
         
@@ -118,22 +118,22 @@ class RobotCtrl:
     
     def ik_res(self, 
                joint_pos, 
-               radius = 0.04, 
+               radius = 0.05, 
                reg = 1e-3, 
                reg_target = None):
         # for vectorized calculation
         res = []    # residual 
         for i in range(joint_pos.shape[1]):
             # compute forward kinematics
-            self.data.qpos[:self.joint_num] = joint_pos[:, i]
-            mujoco.mj_kinematics(self.model, self.data)
+            self.data_inv_kin.qpos[:self.joint_num] = joint_pos[:, i]
+            mujoco.mj_kinematics(self.model, self.data_inv_kin)
             
             # position error (residual)
-            res_pos = self.data.site(self.ee_site_name).xpos - self.target_ee_pos
+            res_pos = self.data_inv_kin.site(self.ee_site_name).xpos - self.target_ee_pos
             
             # current ee quaternion
             ee_quat = np.empty(4)
-            mujoco.mju_mat2Quat(ee_quat, self.data.site(self.ee_site_name).xmat)
+            mujoco.mju_mat2Quat(ee_quat, self.data_inv_kin.site(self.ee_site_name).xmat)
             # orientation residual
             res_quat = np.empty(3)
             mujoco.mju_subQuat(res_quat, self.target_ee_quat, ee_quat)
@@ -152,24 +152,24 @@ class RobotCtrl:
     def ik_jac(self, 
                joint_pos, 
                res,
-               radius = 0.04,
+               radius = 0.05,
                reg = 1e-3):
         del res
         
         # prepare for jacobian
-        mujoco.mj_kinematics(self.model, self.data)
-        mujoco.mj_comPos(self.model, self.data)
+        mujoco.mj_kinematics(self.model, self.data_inv_kin)
+        mujoco.mj_comPos(self.model, self.data_inv_kin)
         
         # get end effector site Jacobian
         jac_pos = np.empty((3, self.model.nv))
         jac_quat = np.empty((3, self.model.nv))
-        mujoco.mj_jacSite(self.model, self.data, jac_pos, jac_quat, self.data.site(self.ee_site_name).id)
+        mujoco.mj_jacSite(self.model, self.data_inv_kin, jac_pos, jac_quat, self.data_inv_kin.site(self.ee_site_name).id)
         jac_pos = jac_pos[:, :self.joint_num]
         jac_quat = jac_quat[:, :self.joint_num]
         
         # calculate the rotation part of jacobian in residual
         ee_quat = np.empty(4)
-        mujoco.mju_mat2Quat(ee_quat, self.data.site(self.ee_site_name).xmat)
+        mujoco.mju_mat2Quat(ee_quat, self.data_inv_kin.site(self.ee_site_name).xmat)
         Deffector = np.empty((3,3))
         mujoco.mjd_subQuat(self.target_ee_quat, ee_quat, None, Deffector)
         
@@ -227,7 +227,7 @@ if __name__ == "__main__":
     
     while robot_ctrl.ok():
         t = time.time()
-        d_pos = [-0.03*np.sin(t), 0.03*np.cos(t), 0]
+        d_pos = [-0.05*np.sin(t), 0.05*np.cos(t), 0]
         robot_ctrl.move_delta_ee(d_pos)
         
         # print(robot.get_base_to_ee())
@@ -237,4 +237,4 @@ if __name__ == "__main__":
         cv2.imshow("image", image)
         cv2.waitKey(1)
         
-        time.sleep(0.1)
+        time.sleep(0.01)
