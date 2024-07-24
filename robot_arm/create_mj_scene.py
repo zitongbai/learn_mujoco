@@ -69,6 +69,7 @@ def add_box(
   box_rgba = np.append(box_rgb, 1.0)
   body.add('freejoint')
   body.add('geom', name='mybox', size=body_size, type='box', rgba=box_rgba)
+  body.add('inertial', pos="0 0 0", mass="0.01", diaginertia="1e-4 1e-4 1e-4")
   
   # expand the qpos in keyframes
   keys = parent.find_all('key')

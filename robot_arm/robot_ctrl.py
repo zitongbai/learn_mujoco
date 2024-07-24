@@ -23,7 +23,7 @@ class RobotCtrl:
         self.ee_site_name = interface.ee_site_name
         
         # parameters for joint pd control
-        self.kp = np.array([50]*self.joint_num, dtype=np.float64)
+        self.kp = np.array([200]*self.joint_num, dtype=np.float64)
         self.kd = np.array([10]*self.joint_num, dtype=np.float64)
         
         # create a thread to run the low level control loop
@@ -118,7 +118,7 @@ class RobotCtrl:
     
     def ik_res(self, 
                joint_pos, 
-               radius = 0.05, 
+               radius = 0.5, 
                reg = 1e-3, 
                reg_target = None):
         # for vectorized calculation
@@ -152,7 +152,7 @@ class RobotCtrl:
     def ik_jac(self, 
                joint_pos, 
                res,
-               radius = 0.05,
+               radius = 0.5,
                reg = 1e-3):
         del res
         

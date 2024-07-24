@@ -101,7 +101,7 @@ class RobotMjInterface:
     
     def get_gripper_pos(self):
         with self.data_lock:
-            return self.data.qpos[self.joint_num]
+            return self.data.ctrl[self.joint_num]
     
     def set_gripper_pos(self, desired_pos):
         with self.data_lock:
